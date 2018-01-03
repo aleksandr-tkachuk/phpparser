@@ -1,46 +1,103 @@
 #!/usr/bin/php
 
 <?php
-if ($_SERVER['argc'] >= 3) {
-    $parser = new Parser($argv[2]);
-    switch ($argv[1]) {
-        case "parse":
-            $result = $parser->parse();
-            echo "results saved in: " . "./" . parse_url($argv[2])['host'] . ".csv \n";
-            break;
-        case "report":
-            $parser->report();
-            break;
-        case "help":
-            echo "parser.php < parse|report|help > < URL >\n
+
+set_error_handler(function(){ echo "\033[0;31mfail \033[0m \n";}, E_WARNING);
+
+if(empty($argv[1])) {
+    showHelp();
+    exit;
+}
+
+switch ($argv[1]) {
+    case "parse":
+        checkURLArg();
+        $parser = new Parser($argv[2]);
+        $parser->setLogger(function($msg) {
+            echo "$msg\n";
+        });
+        $file = Report::save( $parser->parse(), $argv[2] );
+        echo "results saved in: ./" . $file . ".csv \n";
+        break;
+    case "report":
+        try {
+            checkURLArg();
+            echo Report::get($argv[2]);
+        } catch (Exception $e) {
+            echo $e->getMessage() . "\n";
+        }
+        break;
+    case "help":
+    default:
+        showHelp();
+        break;
+}
+
+function checkURLArg() {
+    global $argv;
+    if(empty($argv[2])) {
+        echo "wrung url argument\n";
+        exit;
+    }
+}
+
+function showHelp() {
+    echo "parser.php < parse|report|help > < URL >\n
       - parse - parse site and save result to file\n
       - report - show report\n
       - show this help\n";
-            break;
-        default:
-            echo "Condition: \nparse.php < parse|report|help >  < URL >\n";
-            break;
-    }
-} else {
-    echo "Condition: \nparse.php < parse|report|help >  < URL >\n";
 }
 
+
+class Report
+{
+    public static function save($images, $url) {
+        $filename = sprintf("%s.csv", parse_url(URL::withProtocol($url))['host']);
+        file_put_contents($filename, implode("\n", $images));
+        return $filename;
+    }
+
+    public static function get($url) {
+        $filename = sprintf("%s.csv", parse_url(URL::withProtocol($url))['host']);
+        if (file_exists($filename)) {
+            return file_get_contents($filename);
+        } else {
+            throw new Exception("The file: $filename does not exist");
+        }
+    }
+}
+
+class URL
+{
+    public static function withProtocol($url)
+    {
+        if (strpos($url, 'http') !== 0) {
+            $url = 'http://' . $url . '/';
+        }
+        return $url;
+    }
+}
 
 class Parser
 {
 
-    public $url;
-    public $currentPath;
-    public $visitedLinks;
+    private $url;
+    private $currentPath;
+    private $visitedLinks;
     private $toFullUrl;
-    private $level = 0;
+    private $numLink = 0;
+    private $logger;
 
     public function __construct($url)
     {
         $this->url = $url;
-        //массмв посещенных страниц
+        /*
+         * masses of visited pages
+         * */
         $this->visitedLinks = [$this->url];
-        // принимает URL вида http://site.com/path/page | /path/page | path/page и приводитк виду http://site.com/path/page
+        /*
+         * A URL of the form http://site.com/path/page | / path / page | path / page and results in the form http://site.com/path/page
+         * */
         $this->toFullUrl = function ($el) {
 
             if (substr($el, 0, 1) === '/') {
@@ -53,63 +110,65 @@ class Parser
 
             return $this->currentPath . $el;
         };
+
+        $this->logger = function(){};
+    }
+
+    public function setLogger($logger) {
+        $this->logger = $logger;
+    }
+
+    public function getURL() {
+        return $this->url;
     }
 
     public function parse()
     {
-
-        $this->url = $this->withProtocol();
+        $this->url = URL::withProtocol($this->url);
 
         $this->url = $this->removeTrailSlashes($this->url);
 
         $pictures = $this->parsePage($this->url);
 
-        file_put_contents(parse_url($this->url)['host'] . '.csv', implode("\n", $pictures));
         return $pictures;
     }
 
-    public function report()
+    private function parsePage($url)
     {
-        $this->url = $this->withProtocol();
-
-        if (is_file(parse_url($this->url)['host'] . ".csv")) {
-            echo "results saved in: " . file_get_contents(parse_url($this->url)['host'] . ".csv") . " \n";
-        } else {
-            echo "The file: ".parse_url($this->url)['host'] . " does not exist\n";
-        }
-       // echo "results saved in: " . file_get_contents(parse_url($this->url)['host'] . ".csv") . " \n";
-    }
-
-    public function parsePage($url)
-    {
-
         $url = $this->removeTrailSlashes($url);
 
-        echo "URL: $url " . ($this->level++) . " \n";
+        ($this->logger)("URL: $url " . ($this->numLink++));
 
         $parsedURL = parse_url($url);
 
-        // полный путь к текущей странице чтобы подставлять к относмтельным ссылкам
+        /*
+         * full path to the current page to substitute for relative references
+         */
         $this->currentPath = $parsedURL['scheme'] . '://' . $parsedURL['host'] . $parsedURL['path'];
 
         $this->currentPath = $this->removeTrailSlashes($this->currentPath);
 
-        $contents = file_get_contents(trim($url));
+        $contents = file_get_contents(trim($url) );
         preg_match_all('%<a href="(' . $this->removeTrailSlashes($this->url) . ')?(/?[^#"]+)%', $contents, $links);
         preg_match_all('/<img src="([^"]+)"/', $contents, $images);
 
         $links = array_unique($links[2]);
         $images = array_unique($images[1]);
-        //убираем не нужные протоколы
+        /*
+         * we remove unnecessary protocols
+         */
         $links = array_filter($links, function ($link) {
             return strpos($link, 'mailto:') !== 0 && strpos($link, 'javascript:') !== 0;
         });
-        //приводит каждый эл. массива к полному пути
+        /*
+         * leads each email. array to the full path
+         */
         $links = array_map($this->toFullUrl, $links);
-
         $images = array_map($this->toFullUrl, $images);
 
-        //убирает ссылки других доменов
+        /*
+         * removes links from other domains
+        */
         $links = array_filter($links, function ($link) {
             return strpos($link, $this->url) === 0;
         });
@@ -122,34 +181,25 @@ class Parser
             $newLinks = $this->parsePage($link);
             if (is_array($newLinks)) {
                 $pic = array_merge($pic, $newLinks);
-                echo '==' . count($pic) . "== \n";
+                ($this->logger)('==' . count($pic) . '==');
             }
         }
 
         return array_unique(array_merge($images, $pic));
     }
 
-    public function withProtocol()
-    {
-        if (strpos($this->url, 'http') !== 0) {
-            $this->url = 'http://' . $this->url . '/';
-        }
-        return $this->url;
-    }
-
-    //возврашает еще не посещенные ссылки
-    public function filterVisitedLinks($links)
+    /*
+     * returns unreachable links
+     */
+    private function filterVisitedLinks($links)
     {
         $notVisitedLinks = array_diff($links, $this->visitedLinks);
         return $notVisitedLinks;
     }
 
-    public function removeTrailSlashes($findTo)
+    private function removeTrailSlashes($findTo)
     {
         $trailSlashSh = preg_replace('#/+$#', '/', $findTo);
         return $trailSlashSh;
     }
-
-
 }
-
