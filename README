@@ -11,3 +11,8 @@
 2. Команда report - выводит в консоль результаты анализа для домена, принимает обязательный параметр domain (как с протоколом, так и без).
 
 3. Команда help - выводит список команд с пояснениями.
+
+Пример моего теста: 
+php parse.php parse giperkan.ru
+php parse.php report giperkan.ru
+php parse.php help

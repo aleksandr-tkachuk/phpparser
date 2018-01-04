@@ -1,7 +1,10 @@
 #!/usr/bin/php
 
 <?php
-
+/*
+ * the request URL /missingpage was not found on this server
+ * replace it with: fail (color red)
+ */
 set_error_handler(function(){ echo "\033[0;31mfail \033[0m \n";}, E_WARNING);
 
 if(empty($argv[1])) {
@@ -17,7 +20,7 @@ switch ($argv[1]) {
             echo "$msg\n";
         });
         $file = Report::save( $parser->parse(), $argv[2] );
-        echo "results saved in: ./" . $file . ".csv \n";
+        echo "results saved in: ./" . $file . "\n";
         break;
     case "report":
         try {
@@ -53,7 +56,7 @@ class Report
 {
     public static function save($images, $url) {
         $filename = sprintf("%s.csv", parse_url(URL::withProtocol($url))['host']);
-        file_put_contents($filename, implode("\n", $images));
+        file_put_contents($filename, implode(";", $images));
         return $filename;
     }
 
@@ -176,16 +179,16 @@ class Parser
         $links = $this->filterVisitedLinks($links);
 
         $this->visitedLinks = array_merge($this->visitedLinks, $links);
-        $pic = [];
+        $picture = [];
         foreach ($links as $link) {
             $newLinks = $this->parsePage($link);
             if (is_array($newLinks)) {
-                $pic = array_merge($pic, $newLinks);
-                ($this->logger)('==' . count($pic) . '==');
+                $picture = array_merge($picture, $newLinks);
+                ($this->logger)('==' . count($picture) . '==');
             }
         }
 
-        return array_unique(array_merge($images, $pic));
+        return array_unique(array_merge($images, $picture));
     }
 
     /*
