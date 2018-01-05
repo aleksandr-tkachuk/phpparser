@@ -2,8 +2,8 @@
 
 <?php
 /*
- * the request URL /missingpage was not found on this server
- * replace it with: fail (color red)
+ * if page not found (404)
+ * replace php warning with: "fail (red color)"
  */
 set_error_handler(function(){ echo "\033[0;31mfail \033[0m \n";}, E_WARNING);
 
@@ -102,6 +102,10 @@ class Parser
          * A URL of the form http://site.com/path/page | / path / page | path / page and results in the form http://site.com/path/page
          * */
         $this->toFullUrl = function ($el) {
+
+            if (substr($el, 0, 2) === '//') {
+                return $this->removeTrailSlashes($this->url) . substr($el, 1, strlen($el));
+            }
 
             if (substr($el, 0, 1) === '/') {
                 return $this->removeTrailSlashes($this->url) . $el;
@@ -202,7 +206,7 @@ class Parser
 
     private function removeTrailSlashes($findTo)
     {
-        $trailSlashSh = preg_replace('#/+$#', '/', $findTo);
+        $trailSlashSh = preg_replace('#/+$#', '', $findTo);
         return $trailSlashSh;
     }
 }
